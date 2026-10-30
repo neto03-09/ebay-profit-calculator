@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eBay Profit Calculator</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --text: #1d2330;
+    --muted: #616a7a;
+    --border: #dde1e7;
+    --accent: #2457c5;
+    --good: #18794e;
+    --bad: #c4321d;
+    --warn-bg: #fff6dd;
+    --warn-border: #f0d68a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b;
+      --card: #1b2029;
+      --text: #e7eaf0;
+      --muted: #9aa3b2;
+      --border: #2d3441;
+      --accent: #7aa2ff;
+      --good: #4cc38a;
+      --bad: #ff7b6b;
+      --warn-bg: #2b2616;
+      --warn-border: #5a4b1d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+  .note {
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.9rem;
+    margin-bottom: 20px;
+  }
+  .layout { display: grid; gap: 16px; }
+  @media (min-width: 760px) {
+    .layout { grid-template-columns: 1fr 320px; align-items: start; }
+    .results { position: sticky; top: 16px; }
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  fieldset { border: 0; padding: 0; margin: 0 0 20px; }
+  fieldset:last-child { margin-bottom: 0; }
+  legend {
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  label { display: block; font-size: 0.9rem; }
+  .field { position: relative; margin-top: 4px; }
+  .field span {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    color: var(--muted); font-size: 0.9rem; pointer-events: none;
+  }
+  .field .pre { left: 10px; }
+  .field .suf { right: 10px; }
+  input[type="number"] {
+    width: 100%;
+    padding: 10px 28px 10px 24px;
+    font: inherit;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  input[type="number"]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .check { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-size: 0.9rem; }
+  .check input { width: 18px; height: 18px; accent-color: var(--accent); }
+  .results h2 { font-size: 1rem; margin: 0 0 12px; }
+  dl { margin: 0; }
+  .row {
+    display: flex; justify-content: space-between; gap: 12px;
+    padding: 8px 0; border-bottom: 1px solid var(--border);
+  }
+  .row:last-child { border-bottom: 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .row.big dd { font-size: 1.3rem; }
+  .row.detail { padding: 4px 0 4px 12px; font-size: 0.85rem; }
+  .pos { color: var(--good); }
+  .neg { color: var(--bad); }
+  .explain { margin-top: 16px; }
+  .explain h2 { font-size: 1.1rem; margin: 0 0 8px; }
+  .explain code {
+    display: block;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    margin: 4px 0 10px;
+    font-size: 0.85rem;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .explain p, .explain li { font-size: 0.9rem; }
+  .explain ul { padding-left: 20px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>eBay Profit Calculator</h1>
+  <p class="sub">For UK resellers importing stock from China.</p>
+
+  <div class="note">
+    <strong>Check current rates.</strong> The defaults are examples only. Duty depends on the commodity code,
+    and eBay fees vary by category and seller type and change regularly. Confirm them on GOV.UK
+    (Trade Tariff) and eBay's fee pages before relying on the numbers.
+  </div>
+
+  <div class="layout">
+    <form class="card" id="calc" autocomplete="off" onsubmit="return false">
+      <fieldset>
+        <legend>Purchase &amp; import (per unit)</legend>
+        <div class="grid">
+          <label>Item cost
+            <div class="field"><span class="pre">£</span><input type="number" id="itemCost" value="8.00" min="0" step="0.01"></div>
+          </label>
+          <label>Shipping to UK
+            <div class="field"><span class="pre">£</span><input type="number" id="shipping" value="2.50" min="0" step="0.01"></div>
+          </label>
+          <label>Insurance
+            <div class="field"><span class="pre">£</span><input type="number" id="insurance" value="0.20" min="0" step="0.01"></div>
+          </label>
+          <label>Duty rate
+            <div class="field"><input type="number" id="dutyRate" value="4" min="0" step="0.1"><span class="suf">%</span></div>
+          </label>
+          <label>Import VAT rate
+            <div class="field"><input type="number" id="vatRate" value="20" min="0" step="0.1"><span class="suf">%</span></div>
+          </label>
+        </div>
+        <label class="check"><input type="checkbox" id="vatReclaim"> Import VAT is reclaimable (VAT registered)</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>eBay fees</legend>
+        <div class="grid">
+          <label>Final value fee
+            <div class="field"><input type="number" id="fvfRate" value="12.9" min="0" step="0.1"><span class="suf">%</span></div>
+          </label>
+          <label>Fixed fee per order
+            <div class="field"><span class="pre">£</span><input type="number" id="fixedFee" value="0.40" min="0" step="0.01"></div>
+          </label>
+          <label>Promoted listing
+            <div class="field"><input type="number" id="promoRate" value="5" min="0" step="0.1"><span class="suf">%</span></div>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Fulfilment</legend>
+        <div class="grid">
+          <label>UK postage cost
+            <div class="field"><span class="pre">£</span><input type="number" id="postage" value="3.20" min="0" step="0.01"></div>
+          </label>
+          <label>Packaging cost
+            <div class="field"><span class="pre">£</span><input type="number" id="packaging" value="0.35" min="0" step="0.01"></div>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Pricing</legend>
+        <div class="grid">
+          <label>Sell price (incl. postage charged)
+            <div class="field"><span class="pre">£</span><input type="number" id="sellPrice" value="24.99" min="0" step="0.01"></div>
+          </label>
+          <label>Target margin
+            <div class="field"><input type="number" id="targetMargin" value="25" min="0" max="99" step="0.5"><span class="suf">%</span></div>
+          </label>
+        </div>
+      </fieldset>
+    </form>
+
+    <section class="card results" aria-live="polite">
+      <h2>Results</h2>
+      <dl>
+        <div class="row"><dt>Landed cost</dt><dd id="outLanded">–</dd></div>
+        <div class="row detail"><dt>Duty</dt><dd id="outDuty">–</dd></div>
+        <div class="row detail"><dt>Import VAT</dt><dd id="outVat">–</dd></div>
+        <div class="row detail"><dt>eBay fees</dt><dd id="outFees">–</dd></div>
+        <div class="row"><dt>Total costs</dt><dd id="outTotal">–</dd></div>
+        <div class="row big"><dt>Profit</dt><dd id="outProfit">–</dd></div>
+        <div class="row big"><dt>Margin</dt><dd id="outMargin">–</dd></div>
+        <div class="row"><dt>Min. price for target</dt><dd id="outMinPrice">–</dd></div>
+      </dl>
+    </section>
+  </div>
+
+  <section class="card explain">
+    <h2>How it's calculated</h2>
+    <p>Customs value is item + shipping + insurance (CIF). Duty is charged on that; import VAT is charged on CIF plus duty.</p>
+    <code>CIF        = item + shipping + insurance
+Duty       = CIF × duty %
+Import VAT = (CIF + duty) × VAT %
+Landed     = CIF + duty + import VAT   (VAT left out if reclaimable)</code>
+    <code>eBay fees  = sell price × (FVF % + promoted %) + fixed fee
+Total      = landed + UK postage + packaging + eBay fees
+Profit     = sell price − total
+Margin     = profit ÷ sell price</code>
+    <p>The minimum price solves <em>profit = target margin × price</em> for price:</p>
+    <code>Min price = (landed + postage + packaging + fixed fee)
+            ÷ (1 − FVF % − promoted % − target %)</code>
+    <ul>
+      <li>If you are VAT registered you also owe output VAT on each sale, which this calculator doesn't deduct.</li>
+      <li>For consignments of £135 or less, VAT is normally charged by the seller or marketplace at checkout rather than at import, and customs duty is usually not due.</li>
+    </ul>
+  </section>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const num = (id) => {
+    const v = parseFloat($(id).value);
+    return Number.isFinite(v) ? v : 0;
+  };
+  const gbp = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' });
+  const money = (v) => gbp.format(v);
+  const pct = (v) => `${v.toFixed(1)}%`;
+
+  function setSigned(el, text, value) {
+    el.textContent = text;
+    el.classList.toggle('pos', value > 0);
+    el.classList.toggle('neg', value < 0);
+  }
+
+  function calculate() {
+    const cif = num('itemCost') + num('shipping') + num('insurance');
+    const duty = cif * num('dutyRate') / 100;
+    const vat = (cif + duty) * num('vatRate') / 100;
+    const reclaim = $('vatReclaim').checked;
+    const landed = cif + duty + (reclaim ? 0 : vat);
+
+    const price = num('sellPrice');
+    const variableRate = (num('fvfRate') + num('promoRate')) / 100;
+    const fixed = num('fixedFee');
+    const fees = price * variableRate + fixed;
+    const other = num('postage') + num('packaging');
+    const total = landed + other + fees;
+    const profit = price - total;
+    const margin = price > 0 ? profit / price * 100 : 0;
+
+    const target = num('targetMargin') / 100;
+    const denom = 1 - variableRate - target;
+    const minPrice = denom > 0 ? (landed + other + fixed) / denom : null;
+
+    $('outLanded').textContent = money(landed);
+    $('outDuty').textContent = money(duty);
+    $('outVat').textContent = money(vat) + (reclaim ? ' (reclaimed)' : '');
+    $('outFees').textContent = money(fees);
+    $('outTotal').textContent = money(total);
+    setSigned($('outProfit'), money(profit), profit);
+    setSigned($('outMargin'), price > 0 ? pct(margin) : '–', margin);
+    $('outMinPrice').textContent = minPrice === null ? 'Not reachable' : money(minPrice);
+    $('outMinPrice').title = minPrice === null ? 'Fee % + target % is 100% or more' : '';
+  }
+
+  $('calc').addEventListener('input', calculate);
+  calculate();
+</script>
+</body>
+</html>
