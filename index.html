@@ -91,6 +91,20 @@
   input[type="number"]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
   .check { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-size: 0.9rem; }
   .check input { width: 18px; height: 18px; accent-color: var(--accent); }
+  .actions {
+    display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+    gap: 8px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);
+  }
+  .saved { color: var(--muted); font-size: 0.85rem; }
+  button {
+    font: inherit; font-size: 0.9rem;
+    padding: 8px 14px;
+    color: var(--accent);
+    background: transparent;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    cursor: pointer;
+  }
   .results h2 { font-size: 1rem; margin: 0 0 12px; }
   dl { margin: 0; }
   .row {
@@ -154,6 +168,7 @@
           </label>
         </div>
         <label class="check"><input type="checkbox" id="vatReclaim"> Import VAT is reclaimable (VAT registered)</label>
+        <label class="check"><input type="checkbox" id="salesVat"> Pay VAT on sales at the same rate (VAT registered)</label>
       </fieldset>
 
       <fieldset>
@@ -194,6 +209,11 @@
           </label>
         </div>
       </fieldset>
+
+      <div class="actions">
+        <span class="saved">Your figures are saved in this browser.</span>
+        <button type="button" id="reset">Reset to defaults</button>
+      </div>
     </form>
 
     <section class="card results" aria-live="polite">
@@ -203,6 +223,7 @@
         <div class="row detail"><dt>Duty</dt><dd id="outDuty">–</dd></div>
         <div class="row detail"><dt>Import VAT</dt><dd id="outVat">–</dd></div>
         <div class="row detail"><dt>eBay fees</dt><dd id="outFees">–</dd></div>
+        <div class="row detail"><dt>VAT on sale</dt><dd id="outSalesVat">–</dd></div>
         <div class="row"><dt>Total costs</dt><dd id="outTotal">–</dd></div>
         <div class="row big"><dt>Profit</dt><dd id="outProfit">–</dd></div>
         <div class="row big"><dt>Margin</dt><dd id="outMargin">–</dd></div>
@@ -219,14 +240,16 @@ Duty       = CIF × duty %
 Import VAT = (CIF + duty) × VAT %
 Landed     = CIF + duty + import VAT   (VAT left out if reclaimable)</code>
     <code>eBay fees  = sell price × (FVF % + promoted %) + fixed fee
-Total      = landed + UK postage + packaging + eBay fees
+Sale VAT   = sell price × VAT % ÷ (100 + VAT %)   (only if ticked)
+Total      = landed + UK postage + packaging + eBay fees + sale VAT
 Profit     = sell price − total
 Margin     = profit ÷ sell price</code>
     <p>The minimum price solves <em>profit = target margin × price</em> for price:</p>
     <code>Min price = (landed + postage + packaging + fixed fee)
-            ÷ (1 − FVF % − promoted % − target %)</code>
+            ÷ (1 − FVF % − promoted % − sale VAT share − target %)</code>
     <ul>
-      <li>If you are VAT registered you also owe output VAT on each sale, which this calculator doesn't deduct.</li>
+      <li>Sell price is taken as VAT-inclusive, so the VAT you owe is the VAT fraction of it (1/6 at 20%). Sale VAT share is that fraction, or 0 if unticked.</li>
+      <li>VAT eBay charges on its own fees isn't modelled; if you're VAT registered you can usually reclaim it.</li>
       <li>For consignments of £135 or less, VAT is normally charged by the seller or marketplace at checkout rather than at import, and customs duty is usually not due.</li>
     </ul>
   </section>
@@ -256,30 +279,64 @@ Margin     = profit ÷ sell price</code>
     const landed = cif + duty + (reclaim ? 0 : vat);
 
     const price = num('sellPrice');
-    const variableRate = (num('fvfRate') + num('promoRate')) / 100;
+    const feeRate = (num('fvfRate') + num('promoRate')) / 100;
     const fixed = num('fixedFee');
-    const fees = price * variableRate + fixed;
+    const fees = price * feeRate + fixed;
+    const salesVatShare = $('salesVat').checked ? num('vatRate') / (100 + num('vatRate')) : 0;
+    const salesVat = price * salesVatShare;
     const other = num('postage') + num('packaging');
-    const total = landed + other + fees;
+    const total = landed + other + fees + salesVat;
     const profit = price - total;
     const margin = price > 0 ? profit / price * 100 : 0;
 
     const target = num('targetMargin') / 100;
-    const denom = 1 - variableRate - target;
+    const denom = 1 - feeRate - salesVatShare - target;
     const minPrice = denom > 0 ? (landed + other + fixed) / denom : null;
 
     $('outLanded').textContent = money(landed);
     $('outDuty').textContent = money(duty);
     $('outVat').textContent = money(vat) + (reclaim ? ' (reclaimed)' : '');
     $('outFees').textContent = money(fees);
+    $('outSalesVat').textContent = money(salesVat);
     $('outTotal').textContent = money(total);
     setSigned($('outProfit'), money(profit), profit);
     setSigned($('outMargin'), price > 0 ? pct(margin) : '–', margin);
     $('outMinPrice').textContent = minPrice === null ? 'Not reachable' : money(minPrice);
-    $('outMinPrice').title = minPrice === null ? 'Fee % + target % is 100% or more' : '';
+    $('outMinPrice').title = minPrice === null ? 'Fees + VAT + target add up to 100% or more' : '';
   }
 
-  $('calc').addEventListener('input', calculate);
+  // Remember inputs in this browser; storage can be unavailable (private mode etc.)
+  const STORAGE_KEY = 'ebay-profit-calculator';
+  const inputs = [...$('calc').querySelectorAll('input')];
+
+  function save() {
+    const data = {};
+    inputs.forEach((el) => { data[el.id] = el.type === 'checkbox' ? el.checked : el.value; });
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) {}
+  }
+
+  function load() {
+    let data;
+    try { data = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch (e) {}
+    if (!data) return;
+    inputs.forEach((el) => {
+      if (!(el.id in data)) return;
+      if (el.type === 'checkbox') el.checked = !!data[el.id];
+      else el.value = data[el.id];
+    });
+  }
+
+  $('reset').addEventListener('click', () => {
+    inputs.forEach((el) => {
+      if (el.type === 'checkbox') el.checked = el.defaultChecked;
+      else el.value = el.defaultValue;
+    });
+    try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+    calculate();
+  });
+
+  $('calc').addEventListener('input', () => { calculate(); save(); });
+  load();
   calculate();
 </script>
 </body>
