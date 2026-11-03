@@ -105,6 +105,17 @@
     border-radius: 8px;
     cursor: pointer;
   }
+  [hidden] { display: none !important; }
+  .batch-title { margin-top: 20px !important; }
+  .hint {
+    margin: 16px 0 0;
+    padding: 10px 12px;
+    font-size: 0.85rem;
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-border);
+    border-radius: 8px;
+  }
+  .sub a, .explain a { color: var(--accent); }
   .results h2 { font-size: 1rem; margin: 0 0 12px; }
   dl { margin: 0; }
   .row {
@@ -138,7 +149,7 @@
 <body>
 <main>
   <h1>eBay Profit Calculator</h1>
-  <p class="sub">For UK resellers importing stock from China.</p>
+  <p class="sub">For UK resellers importing stock from China. New to import VAT and duty? <a href="guide.html">Read the guide</a>.</p>
 
   <div class="note">
     <strong>Check current rates.</strong> The defaults are examples only. Duty depends on the commodity code,
@@ -149,16 +160,19 @@
   <div class="layout">
     <form class="card" id="calc" autocomplete="off" onsubmit="return false">
       <fieldset>
-        <legend>Purchase &amp; import (per unit)</legend>
+        <legend>Purchase &amp; import</legend>
         <div class="grid">
-          <label>Item cost
+          <label>Item cost (per unit)
             <div class="field"><span class="pre">£</span><input type="number" id="itemCost" value="8.00" min="0" step="0.01"></div>
           </label>
-          <label>Shipping to UK
-            <div class="field"><span class="pre">£</span><input type="number" id="shipping" value="2.50" min="0" step="0.01"></div>
+          <label>Units in shipment
+            <div class="field"><input type="number" id="quantity" value="20" min="1" step="1"></div>
           </label>
-          <label>Insurance
-            <div class="field"><span class="pre">£</span><input type="number" id="insurance" value="0.20" min="0" step="0.01"></div>
+          <label>Shipping to UK (whole shipment)
+            <div class="field"><span class="pre">£</span><input type="number" id="shipping" value="50.00" min="0" step="0.01"></div>
+          </label>
+          <label>Insurance (whole shipment)
+            <div class="field"><span class="pre">£</span><input type="number" id="insurance" value="4.00" min="0" step="0.01"></div>
           </label>
           <label>Duty rate
             <div class="field"><input type="number" id="dutyRate" value="4" min="0" step="0.1"><span class="suf">%</span></div>
@@ -217,7 +231,7 @@
     </form>
 
     <section class="card results" aria-live="polite">
-      <h2>Results</h2>
+      <h2>Results (per unit)</h2>
       <dl>
         <div class="row"><dt>Landed cost</dt><dd id="outLanded">–</dd></div>
         <div class="row detail"><dt>Duty</dt><dd id="outDuty">–</dd></div>
@@ -229,13 +243,21 @@
         <div class="row big"><dt>Margin</dt><dd id="outMargin">–</dd></div>
         <div class="row"><dt>Min. price for target</dt><dd id="outMinPrice">–</dd></div>
       </dl>
+      <div id="batch" hidden>
+        <h2 class="batch-title">Whole shipment</h2>
+        <dl>
+          <div class="row"><dt>Landed cost</dt><dd id="outBatchLanded">–</dd></div>
+          <div class="row"><dt>Profit if all sell</dt><dd id="outBatchProfit">–</dd></div>
+        </dl>
+      </div>
+      <p class="hint" id="lowValueHint" hidden></p>
     </section>
   </div>
 
   <section class="card explain">
     <h2>How it's calculated</h2>
-    <p>Customs value is item + shipping + insurance (CIF). Duty is charged on that; import VAT is charged on CIF plus duty.</p>
-    <code>CIF        = item + shipping + insurance
+    <p>Customs value is item + shipping + insurance (CIF). Duty is charged on that; import VAT is charged on CIF plus duty. Shipping and insurance are for the whole shipment and are split evenly across the units in it; everything below is per unit.</p>
+    <code>CIF        = item + (shipping + insurance) ÷ units
 Duty       = CIF × duty %
 Import VAT = (CIF + duty) × VAT %
 Landed     = CIF + duty + import VAT   (VAT left out if reclaimable)</code>
@@ -252,6 +274,7 @@ Margin     = profit ÷ sell price</code>
       <li>VAT eBay charges on its own fees isn't modelled; if you're VAT registered you can usually reclaim it.</li>
       <li>For consignments of £135 or less, VAT is normally charged by the seller or marketplace at checkout rather than at import, and customs duty is usually not due.</li>
     </ul>
+    <p>More detail in the <a href="guide.html">import guide</a>.</p>
   </section>
 </main>
 
@@ -272,7 +295,8 @@ Margin     = profit ÷ sell price</code>
   }
 
   function calculate() {
-    const cif = num('itemCost') + num('shipping') + num('insurance');
+    const units = Math.max(1, Math.floor(num('quantity')));
+    const cif = num('itemCost') + (num('shipping') + num('insurance')) / units;
     const duty = cif * num('dutyRate') / 100;
     const vat = (cif + duty) * num('vatRate') / 100;
     const reclaim = $('vatReclaim').checked;
@@ -303,6 +327,18 @@ Margin     = profit ÷ sell price</code>
     setSigned($('outMargin'), price > 0 ? pct(margin) : '–', margin);
     $('outMinPrice').textContent = minPrice === null ? 'Not reachable' : money(minPrice);
     $('outMinPrice').title = minPrice === null ? 'Fees + VAT + target add up to 100% or more' : '';
+
+    $('batch').hidden = units === 1;
+    $('outBatchLanded').textContent = money(landed * units);
+    setSigned($('outBatchProfit'), money(profit * units), profit);
+
+    // £135 is the goods value only, excluding shipping and insurance
+    const goodsValue = num('itemCost') * units;
+    const hint = $('lowValueHint');
+    hint.hidden = goodsValue > 135 || goodsValue === 0;
+    hint.textContent = `Goods value is ${money(goodsValue)}, which is £135 or less. Duty usually isn't charged on ` +
+      'shipments this size, and VAT is added by the seller at checkout instead of at import. Set duty to 0% ' +
+      'and enter the item cost before VAT; the import VAT line then stands in for the VAT you paid at checkout.';
   }
 
   // Remember inputs in this browser; storage can be unavailable (private mode etc.)
@@ -319,6 +355,8 @@ Margin     = profit ÷ sell price</code>
     let data;
     try { data = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch (e) {}
     if (!data) return;
+    // Saves from before batch mode entered shipping per unit
+    if (!('quantity' in data)) data.quantity = '1';
     inputs.forEach((el) => {
       if (!(el.id in data)) return;
       if (el.type === 'checkbox') el.checked = !!data[el.id];
